@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+message SensorData  {
+  string project_guid = 1;
+  string data_id = 2;
+  string timestamp = 3;
+  map<string, double> doubles = 4;
+}

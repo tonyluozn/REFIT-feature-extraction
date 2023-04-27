@@ -1,0 +1,5 @@
+kafka-python
+pyflink
+requests
+confluent-kafka
+grpcio-tools

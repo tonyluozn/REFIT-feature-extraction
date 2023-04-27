@@ -1,0 +1,84 @@
+version: '3.7'
+
+networks:
+  my-network:
+    driver: bridge
+
+services:
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+      
+
+  kafka:
+    image: bitnami/kafka:latest
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_BROKER_ID: 1
+      KAFKA_CONFLUENT_SUPPORT_METRICS_ENABLE: "false"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+    networks:
+      - my-network
+      
+  data_ingestion:
+    build: ./data_ingestion
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC=refit.raw.data
+    networks:
+      - my-network
+
+  data_consumer:
+    build: ./data_consumer
+    depends_on:
+      - kafka
+      - data_ingestion
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC=refit.feature.data
+    networks:
+      - my-network
+
+  flink:
+    image: flink:1.14.3-scala_2.12
+    ports:
+      - "8081:8081"
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink
+        jobmanager.rpc.port: 6123
+      FLINK_JOB_MODE: streaming
+    volumes:
+      - ./flink_job:/opt/flink_job
+    networks:
+      - my-network
+
+  feature_engineering:
+    build: ./flink_job
+    command: >
+      sh -c "
+        pip install apache-flink==1.14.3
+        python pipeline.py
+      "
+    environment:
+      FLINK_JOB_JAR: /opt/flink_job/target/pipeline.jar
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SOURCE_TOPIC: refit.raw.data
+      KAFKA_SINK_TOPIC: refit.feature.data
+    volumes:
+      - ./flink_job:/opt/flink_job
+    depends_on:
+      - kafka
+      - flink
+    networks:
+      - my-network

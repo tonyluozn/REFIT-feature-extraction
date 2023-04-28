@@ -4,6 +4,7 @@ from pyflink.datastream.connectors import FlinkKafkaConsumer, FlinkKafkaProducer
 from pyflink.table import StreamTableEnvironment
 from pyflink.common import Configuration
 from pyflink.table import DataTypes
+from pyflink.table.expressions import col 
 from pyflink.table.udf import ScalarFunction
 import os
 import json
@@ -62,8 +63,6 @@ input_table = t_env.from_data_stream(input_stream)
 t_env.create_temporary_function("transform", transform)
 output_table = input_table.select(expr.call("transform", input_table.f0).alias("result"))
 
-
-
 # Set up the Kafka producer
 producer_props = {
     'bootstrap.servers': 'kafka:9092',
@@ -72,8 +71,8 @@ producer_props = {
 producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, SimpleStringSchema(), producer_props)
 
 # Write to Kafka
-output_stream = output_table.select(expr.call("result"))
+output_stream = t_env.to_data_stream(output_table.select(col("result")))
 output_stream.add_sink(producer)
 
 # Submit the job
-env.execute("My Flink job")
+env.execute("Feature Extraction")

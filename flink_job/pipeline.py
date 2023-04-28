@@ -12,6 +12,11 @@ from pandas import Series
 from pyflink.table import DataTypes
 from pyflink.table.udf import udf
 from pyflink.table import expressions as expr
+from pyflink.common.serialization import SerializationSchema
+
+class RowToStringSerializationSchema(SerializationSchema):
+    def serialize(self, value):
+        return str(value).encode("utf-8")
 
 @udf(input_types=[DataTypes.STRING()],
      result_type=DataTypes.STRING(),
@@ -68,7 +73,7 @@ producer_props = {
     'bootstrap.servers': 'kafka:9092',
     'transaction.timeout.ms': '10000'
 }
-producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, SimpleStringSchema(), producer_props)
+producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, RowToStringSerializationSchema(), producer_props)
 
 # Write to Kafka
 output_stream = t_env.to_data_stream(output_table.select(col("result")))

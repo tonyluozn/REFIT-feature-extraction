@@ -2,15 +2,47 @@ from pyflink.common.serialization import SimpleStringSchema
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.datastream.connectors import FlinkKafkaConsumer, FlinkKafkaProducer
 from pyflink.table import StreamTableEnvironment
+from pyflink.common import Configuration
+from pyflink.table import DataTypes
+from pyflink.table.udf import ScalarFunction
 import os
+import json
+from pandas import Series
+from pyflink.table import DataTypes
+from pyflink.table.udf import udf
+from pyflink.table import expressions as expr
 
-def transform(data):
-    # Your transformation function goes here
-    return data
+@udf(input_types=[DataTypes.STRING()],
+     result_type=DataTypes.STRING(),
+     udf_type='pandas')
+def transform(input_data: Series) -> Series:
+    return input_data
 
-env = StreamExecutionEnvironment.get_execution_environment()
+
+
+# Set the Flink JobManager address and port
+jobmanager_address = os.environ['JOBMANAGER_ADDRESS']
+jobmanager_port = os.environ['JOBMANAGER_PORT']
+
+# Configure the PyFlink gateway
+os.environ["PYFLINK_GATEWAY_OPTS"] = f"-Djobmanager.rpc.address={jobmanager_address} -Djobmanager.rpc.port={jobmanager_port}"
+
+
+# Add this line before creating the StreamExecutionEnvironment
+configuration = Configuration()
+configuration.set_string("pipeline.jars", "file:///opt/flink_job/libs/flink-connector-kafka_2.12-1.14.3.jar;file:///opt/flink_job/libs/kafka-clients-2.8.1.jar")
+
+# Get the StreamExecutionEnvironment
+env = StreamExecutionEnvironment.get_execution_environment(configuration)
 env.set_parallelism(1)
 t_env = StreamTableEnvironment.create(env)
+
+# env.add_jars("file:///opt/flink_job/libs/flink-connector-kafka_2.12-1.14.3.jar")
+# Set the path to the Flink Kafka connector JAR file
+# flink_kafka_connector_jar = "file:///opt/flink_job/libs/flink-connector-kafka_2.12-1.14.3.jar"
+# Configure the PyFlink gateway
+# os.environ["PYFLINK_GATEWAY_OPTS"] = f"-Dpipeline.jars={flink_kafka_connector_jar}"
+
 
 # Set up the Kafka consumer
 consumer_props = {
@@ -27,8 +59,10 @@ input_stream = env.add_source(consumer)
 input_table = t_env.from_data_stream(input_stream)
 
 # Apply transformation
-output_table = input_table.select("transform(value)").alias("result")
-t_env.register_function("transform", transform)
+t_env.create_temporary_function("transform", transform)
+output_table = input_table.select(expr.call("transform", input_table.f0).alias("result"))
+
+
 
 # Set up the Kafka producer
 producer_props = {
@@ -38,7 +72,7 @@ producer_props = {
 producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, SimpleStringSchema(), producer_props)
 
 # Write to Kafka
-output_stream = output_table.select("result")
+output_stream = output_table.select(expr.call("result"))
 output_stream.add_sink(producer)
 
 # Submit the job

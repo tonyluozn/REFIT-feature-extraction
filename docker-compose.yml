@@ -65,18 +65,13 @@ services:
 
   feature_engineering:
     build: ./flink_job
-    command: >
-      sh -c "
-        pip install apache-flink==1.14.3
-        python pipeline.py
-      "
     environment:
-      FLINK_JOB_JAR: /opt/flink_job/target/pipeline.jar
+      # FLINK_KAFKA_CONNECTOR_JAR: /opt/flink_job/libs/flink-connector-kafka_2.12-1.14.3.jar
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_SOURCE_TOPIC: refit.raw.data
       KAFKA_SINK_TOPIC: refit.feature.data
-    volumes:
-      - ./flink_job:/opt/flink_job
+      JOBMANAGER_ADDRESS: flink
+      JOBMANAGER_PORT: 6123
     depends_on:
       - kafka
       - flink

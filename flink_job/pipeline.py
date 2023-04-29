@@ -9,6 +9,7 @@ from pyflink.table.udf import ScalarFunction
 import os
 import json
 from pandas import Series
+import logging
 from pyflink.table import DataTypes
 from pyflink.table.udf import udf
 from pyflink.table import expressions as expr
@@ -17,13 +18,13 @@ from pyflink.common.serialization import SerializationSchema
 from pyflink.common import Types
 from pyflink.datastream.formats.json import JsonRowSerializationSchema
 
-
 @udf(input_types=[DataTypes.STRING()],
      result_type=DataTypes.STRING(),
      udf_type='pandas')
 def transform(input_data: Series) -> Series:
-    return input_data
-
+    input_data = input_data.apply(json.loads)
+    input_data.apply(lambda x: x["doubles"].update({"processed": True}))
+    return input_data.apply(json.dumps)
 
 
 # Set the Flink JobManager address and port
@@ -84,4 +85,5 @@ output_stream = t_env.to_data_stream(output_table.select(col("result")))
 output_stream.add_sink(producer)
 
 # Submit the job
+logging.info("Submitting the job")
 env.execute("Feature Extraction")

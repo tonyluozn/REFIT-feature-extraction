@@ -22,13 +22,33 @@ from pyflink.datastream.window import TumblingProcessingTimeWindows
 from typing import List
 from pyflink.datastream.functions import ProcessWindowFunction
 from pyflink.datastream.window import TimeWindow
+from pyflink.common.watermark_strategy import TimestampAssigner
+from pyflink.common import WatermarkStrategy
+from pyflink.datastream.window import SlidingEventTimeWindows
+from typing import Iterable
+from datetime import datetime
+
+class MyTimestampAssigner(TimestampAssigner):
+    def extract_timestamp(self, value, record_timestamp) -> int:
+        data = json.loads(value)
+        timestamp_str = data['timestamp']
+        dt = datetime.strptime(timestamp_str, '%Y-%m-%dT%H:%M:%SZ')
+        unix_timestamp = int(dt.timestamp() * 1000)
+        return unix_timestamp
+
+watermark_strategy = WatermarkStrategy.for_monotonous_timestamps() \
+    .with_timestamp_assigner(MyTimestampAssigner())
+
 
 
 class TransformProcessWindowFunction(ProcessWindowFunction):
     def __init__(self):
         super(TransformProcessWindowFunction, self).__init__()
 
-    def process(self, key, context: 'ProcessWindowFunction.Context', elements, out):
+    def process(self,
+                key: str,
+                context: ProcessWindowFunction.Context[TimeWindow],
+                elements: Iterable[str]) -> Iterable[str]:
         input_data_list = [json.loads(element) for element in elements]
         temperatures = [data["doubles"]["temperature"] for data in input_data_list]
         humidities = [data["doubles"]["humidity"] for data in input_data_list]
@@ -43,7 +63,28 @@ class TransformProcessWindowFunction(ProcessWindowFunction):
         }
         result.pop("doubles", None)
 
-        out.collect(json.dumps(result))
+        return [json.dumps(result)]
+
+# class TransformProcessWindowFunction(ProcessWindowFunction):
+#     def __init__(self):
+#         super(TransformProcessWindowFunction, self).__init__()
+
+#     def process(self, key, context: 'ProcessWindowFunction.Context', elements, out):
+#         input_data_list = [json.loads(element) for element in elements]
+#         temperatures = [data["doubles"]["temperature"] for data in input_data_list]
+#         humidities = [data["doubles"]["humidity"] for data in input_data_list]
+
+#         average_temperature = sum(temperatures) / len(temperatures) if temperatures else 0
+#         average_humidity = sum(humidities) / len(humidities) if humidities else 0
+
+#         result = input_data_list[-1] if input_data_list else {}
+#         result["features"] = {
+#             "average_temperature": average_temperature,
+#             "average_humidity": average_humidity
+#         }
+#         result.pop("doubles", None)
+
+#         out.collect(json.dumps(result))
 
 # Set the Flink JobManager address and port
 jobmanager_address = os.environ['JOBMANAGER_ADDRESS']
@@ -91,10 +132,12 @@ producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, serialization_schema, producer_p
 
 # Write to Kafka
 # Apply transformation
-input_stream.key_by(lambda x: 1) \
-    .window(TumblingProcessingTimeWindows.of(Time.seconds(10))) \
+input_stream.assign_timestamps_and_watermarks(watermark_strategy) \
+    .key_by(lambda x: x[0], key_type=Types.STRING()) \
+    .window(SlidingEventTimeWindows.of(Time.seconds(5), Time.seconds(5))) \
     .process(TransformProcessWindowFunction(), Types.STRING()) \
     .add_sink(producer)
+
 
 # Submit the job
 logging.info("Submitting the job")

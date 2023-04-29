@@ -53,7 +53,6 @@ services:
 
   flink:
     image: flink:1.14.3-scala_2.12
-    # command: "standalone-job --job-classpath file:/opt/flink_job --job-classpath /opt/flink_job/libs/flink-connector-kafka_2.12-1.14.3.jar -j /opt/flink_job/.jar"
     ports:
       - "8081:8081"
     environment:

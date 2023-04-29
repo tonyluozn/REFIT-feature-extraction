@@ -1,32 +1,69 @@
 from pyflink.common.serialization import SimpleStringSchema
-from pyflink.common.typeinfo import Types
-from pyflink.datastream import StreamExecutionEnvironment, TimeCharacteristic
+from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.datastream.connectors import FlinkKafkaConsumer, FlinkKafkaProducer
-from pyflink.datastream.window import Time, SlidingEventTimeWindows
-from pyflink.datastream.functions import ProcessWindowFunction
-from pyflink.datastream.execution_mode import RuntimeExecutionMode
-from pyflink.datastream.assigners import BoundedOutOfOrdernessTimestampExtractor
 from pyflink.table import StreamTableEnvironment
+from pyflink.common import Configuration
+from pyflink.table import DataTypes
+from pyflink.table.expressions import col 
+from pyflink.table.udf import ScalarFunction
 import os
+import json
+from pandas import Series
+import logging
+from pyflink.table import DataTypes
+from pyflink.table.udf import udf
+from pyflink.table import expressions as expr
+from pyflink.common.restart_strategy import RestartStrategies
+from pyflink.common.serialization import SerializationSchema
+from pyflink.common import Types
+from pyflink.datastream.formats.json import JsonRowSerializationSchema
+from pyflink.common.time import Time
+from pyflink.datastream.window import TumblingProcessingTimeWindows
+from typing import List
+from pyflink.datastream.functions import ProcessWindowFunction
+from pyflink.datastream.window import TimeWindow
 
-class TransformWindowFunction(ProcessWindowFunction):
-    def process(self, key, context, elements, out):
-        # Your transformation function goes here
-        enriched_data = elements[0]  # Replace with your transformation logic using the 1-hour window data (elements)
-        out.collect(enriched_data)
 
-class Strategy(BoundedOutOfOrdernessTimestampExtractor):
+class TransformProcessWindowFunction(ProcessWindowFunction):
     def __init__(self):
-        super().__init__(Time.seconds(10))  # Replace 10 with the maximum allowed out-of-orderness (in seconds)
+        super(TransformProcessWindowFunction, self).__init__()
 
-    def extract_timestamp(self, element):
-        # Replace this with your actual timestamp extraction logic
-        return int(element.split(',')[0]) * 1000  # Assuming the first field in the input data is the timestamp (in seconds)
+    def process(self, key, context: 'ProcessWindowFunction.Context', elements, out):
+        input_data_list = [json.loads(element) for element in elements]
+        temperatures = [data["doubles"]["temperature"] for data in input_data_list]
+        humidities = [data["doubles"]["humidity"] for data in input_data_list]
 
-env = StreamExecutionEnvironment.get_execution_environment()
+        average_temperature = sum(temperatures) / len(temperatures) if temperatures else 0
+        average_humidity = sum(humidities) / len(humidities) if humidities else 0
+
+        result = input_data_list[-1] if input_data_list else {}
+        result["features"] = {
+            "average_temperature": average_temperature,
+            "average_humidity": average_humidity
+        }
+        result.pop("doubles", None)
+
+        out.collect(json.dumps(result))
+
+# Set the Flink JobManager address and port
+jobmanager_address = os.environ['JOBMANAGER_ADDRESS']
+jobmanager_port = os.environ['JOBMANAGER_PORT']
+
+# Configure the PyFlink gateway
+os.environ["PYFLINK_GATEWAY_OPTS"] = f"-Djobmanager.rpc.address={jobmanager_address} -Djobmanager.rpc.port={jobmanager_port}"
+
+
+# Add this line before creating the StreamExecutionEnvironment
+configuration = Configuration()
+configuration.set_string("pipeline.jars", "file:///opt/flink_job/libs/flink-connector-kafka_2.12-1.14.3.jar;file:///opt/flink_job/libs/kafka-clients-2.8.1.jar")
+
+# Get the StreamExecutionEnvironment
+env = StreamExecutionEnvironment.get_execution_environment(configuration)
 env.set_parallelism(1)
-env.set_stream_time_characteristic(TimeCharacteristic.EventTime)
-env.set_runtime_mode(RuntimeExecutionMode.BATCH)
+env.set_restart_strategy(RestartStrategies.fixed_delay_restart(
+    3,  # Number of restart attempts
+    10000  # Delay between attempts (in milliseconds)
+))
 t_env = StreamTableEnvironment.create(env)
 
 # Set up the Kafka consumer
@@ -42,26 +79,23 @@ consumer = FlinkKafkaConsumer(SOURCE_KAFKA_TOPIC, SimpleStringSchema(), consumer
 # Read from Kafka
 input_stream = env.add_source(consumer)
 
-# Assign timestamps and watermarks
-input_stream = input_stream.assign_timestamps_and_watermarks(
-    Strategy()
-)
-
-# Apply transformation with 1-hour window
-output_stream = input_stream \
-    .key_by(lambda x: 1) \
-    .window(SlidingEventTimeWindows.of(Time.hours(1), Time.minutes(1))) \
-    .process(TransformWindowFunction(), output_type=Types.STRING())
-
 # Set up the Kafka producer
 producer_props = {
     'bootstrap.servers': 'kafka:9092',
     'transaction.timeout.ms': '10000'
 }
-producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, SimpleStringSchema(), producer_props)
+
+type_info = Types.ROW([Types.STRING()])
+serialization_schema = JsonRowSerializationSchema.Builder().with_type_info(type_info).build()
+producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, serialization_schema, producer_props)
 
 # Write to Kafka
-output_stream.add_sink(producer)
+# Apply transformation
+input_stream.key_by(lambda x: 1) \
+    .window(TumblingProcessingTimeWindows.of(Time.seconds(10))) \
+    .process(TransformProcessWindowFunction(), Types.STRING()) \
+    .add_sink(producer)
 
 # Submit the job
+logging.info("Submitting the job")
 env.execute("Feature Extraction")

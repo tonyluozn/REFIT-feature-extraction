@@ -72,10 +72,6 @@ producer_props = {
     'transaction.timeout.ms': '10000'
 }
 
-# class RowToStringSerializationSchema(SerializationSchema):
-#     def serialize(self, value):
-#         return str(value[0]).encode("utf-8")
-
 type_info = Types.ROW([Types.STRING()])
 serialization_schema = JsonRowSerializationSchema.Builder().with_type_info(type_info).build()
 producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, serialization_schema, producer_props)

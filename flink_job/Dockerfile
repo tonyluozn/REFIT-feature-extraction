@@ -14,4 +14,4 @@ RUN mkdir -p /opt/flink_job/libs && \
 
 COPY . .
 
-CMD ["python", "pipeline.py"]
+CMD ["python", "batch_pipeline.py"]

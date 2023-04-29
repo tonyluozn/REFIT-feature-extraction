@@ -2,6 +2,7 @@ from kafka import KafkaConsumer
 import time
 import sys
 import os 
+import json
 
 KAFKA_BROKER = os.environ["KAFKA_BOOTSTRAP_SERVERS"]
 KAFKA_TOPIC = os.environ["KAFKA_TOPIC"]
@@ -12,7 +13,7 @@ def connect_kafka():
             consumer = KafkaConsumer(
                 KAFKA_TOPIC,
                 bootstrap_servers=KAFKA_BROKER,
-                value_deserializer=lambda value: value.decode('utf-8'),
+                value_deserializer=lambda value: json.loads(value.decode('utf-8')),
                 auto_offset_reset='latest',
                 enable_auto_commit=True,
             )

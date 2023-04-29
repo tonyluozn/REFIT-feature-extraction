@@ -12,11 +12,11 @@ from pandas import Series
 from pyflink.table import DataTypes
 from pyflink.table.udf import udf
 from pyflink.table import expressions as expr
+from pyflink.common.restart_strategy import RestartStrategies
 from pyflink.common.serialization import SerializationSchema
+from pyflink.common import Types
+from pyflink.datastream.formats.json import JsonRowSerializationSchema
 
-class RowToStringSerializationSchema(SerializationSchema):
-    def serialize(self, value):
-        return str(value).encode("utf-8")
 
 @udf(input_types=[DataTypes.STRING()],
      result_type=DataTypes.STRING(),
@@ -41,14 +41,11 @@ configuration.set_string("pipeline.jars", "file:///opt/flink_job/libs/flink-conn
 # Get the StreamExecutionEnvironment
 env = StreamExecutionEnvironment.get_execution_environment(configuration)
 env.set_parallelism(1)
+env.set_restart_strategy(RestartStrategies.fixed_delay_restart(
+    3,  # Number of restart attempts
+    10000  # Delay between attempts (in milliseconds)
+))
 t_env = StreamTableEnvironment.create(env)
-
-# env.add_jars("file:///opt/flink_job/libs/flink-connector-kafka_2.12-1.14.3.jar")
-# Set the path to the Flink Kafka connector JAR file
-# flink_kafka_connector_jar = "file:///opt/flink_job/libs/flink-connector-kafka_2.12-1.14.3.jar"
-# Configure the PyFlink gateway
-# os.environ["PYFLINK_GATEWAY_OPTS"] = f"-Dpipeline.jars={flink_kafka_connector_jar}"
-
 
 # Set up the Kafka consumer
 consumer_props = {
@@ -73,7 +70,14 @@ producer_props = {
     'bootstrap.servers': 'kafka:9092',
     'transaction.timeout.ms': '10000'
 }
-producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, RowToStringSerializationSchema(), producer_props)
+
+# class RowToStringSerializationSchema(SerializationSchema):
+#     def serialize(self, value):
+#         return str(value[0]).encode("utf-8")
+
+type_info = Types.ROW([Types.STRING()])
+serialization_schema = JsonRowSerializationSchema.Builder().with_type_info(type_info).build()
+producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, serialization_schema, producer_props)
 
 # Write to Kafka
 output_stream = t_env.to_data_stream(output_table.select(col("result")))

@@ -13,7 +13,6 @@ services:
       ALLOW_ANONYMOUS_LOGIN: "yes"
     networks:
       - my-network
-      
 
   kafka:
     image: bitnami/kafka:latest
@@ -29,7 +28,7 @@ services:
       ALLOW_ANONYMOUS_LOGIN: "yes"
     networks:
       - my-network
-      
+
   data_ingestion:
     build: ./data_ingestion
     depends_on:
@@ -51,33 +50,37 @@ services:
     networks:
       - my-network
 
-  flink:
+  jobmanager:
     image: flink:1.14.3-scala_2.12
     ports:
       - "8081:8081"
+    command: jobmanager
     environment:
-      FLINK_PROPERTIES: |
-        jobmanager.rpc.address: flink
-        jobmanager.rpc.port: 6123
-      FLINK_JOB_MODE: streaming
-    volumes:
-      - ./flink_job:/opt/flink_job
-      - ./entrypoint.sh:/entrypoint.sh
-    command: ["/bin/bash", "/entrypoint.sh"]
+      - JOB_MANAGER_RPC_ADDRESS=jobmanager
+    networks:
+      - my-network
+
+  taskmanager:
+    image: flink:1.14.3-scala_2.12
+    depends_on:
+      - jobmanager
+    command: taskmanager
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=jobmanager
     networks:
       - my-network
 
   feature_engineering:
     build: ./flink_job
     environment:
-      # FLINK_KAFKA_CONNECTOR_JAR: /opt/flink_job/libs/flink-connector-kafka_2.12-1.14.3.jar
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_SOURCE_TOPIC: refit.raw.data
       KAFKA_SINK_TOPIC: refit.feature.data
-      JOBMANAGER_ADDRESS: flink
+      JOBMANAGER_ADDRESS: jobmanager
       JOBMANAGER_PORT: 6123
     depends_on:
       - kafka
-      - flink
+      - jobmanager
+      - taskmanager
     networks:
       - my-network

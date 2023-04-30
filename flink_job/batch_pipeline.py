@@ -126,9 +126,9 @@ producer_props = {
     'transaction.timeout.ms': '10000'
 }
 
-type_info = Types.ROW([Types.STRING()])
-serialization_schema = JsonRowSerializationSchema.Builder().with_type_info(type_info).build()
-producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, serialization_schema, producer_props)
+# type_info = Types.ROW([Types.STRING()])
+# serialization_schema = JsonRowSerializationSchema.Builder().with_type_info(type_info).build()
+producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, SimpleStringSchema(), producer_props)
 
 # Write to Kafka
 # Apply transformation

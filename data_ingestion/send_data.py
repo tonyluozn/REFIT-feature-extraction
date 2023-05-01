@@ -24,10 +24,10 @@ def connect_kafka():
 
 producer = connect_kafka()
 
-def send_data():
+def send_data(key):
     sensor_data = {
-        "project_guid": "1234",
-        "sensor_id": "abcd",
+        "project_guid": "iot-streaming",
+        "id": str(key),
         "timestamp": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
         "doubles": {"temperature": round(random.uniform(20, 30), 1),
                     "humidity": round(random.uniform(30, 60), 1)},
@@ -37,8 +37,10 @@ def send_data():
     print(f"Sent data: {sensor_data}")
     sys.stdout.flush() # flush print statement to terminal log
 
+id = 0
 while True:
-    send_data()
+    send_data(id)
+    id+=1
     time.sleep(5)  # wait for 5 seconds before sending the next data point
 
 

@@ -134,7 +134,7 @@ producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, SimpleStringSchema(), producer_p
 # Apply transformation
 input_stream.assign_timestamps_and_watermarks(watermark_strategy) \
     .key_by(lambda x: x[0], key_type=Types.STRING()) \
-    .window(CustomEventTimeWindowAssigner(window_size_seconds=20)) \
+    .window(SlidingEventTimeWindows.of(Time.seconds(20), Time.seconds(5))) \
     .process(TransformProcessWindowFunction(), Types.STRING()) \
     .add_sink(producer)
 

@@ -16,13 +16,16 @@ from pyflink.common import WatermarkStrategy
 from typing import Iterable
 from datetime import datetime
 from pyflink.datastream.state import ListState, ListStateDescriptor
-from pyflink.datastream.functions import KeyedProcessFunction
+from pyflink.datastream.functions import KeyedProcessFunction, RuntimeContext
 
 class CustomProcessFunction(KeyedProcessFunction):
-    def open(self, parameters: Configuration):
-        self.event_queue = self.get_runtime_context().get_list_state(ListStateDescriptor('event_queue', Types.STRING()))
+    def __init__(self):
+        self.event_queue = None
 
-    def process_element(self, value, ctx, out):
+    def open(self, runtime_context: RuntimeContext):
+        self.event_queue = runtime_context.get_list_state(ListStateDescriptor('event_queue', Types.STRING()))
+
+    def process_element(self, value, ctx):
         # add the current event to the queue
         self.event_queue.add(value)
 
@@ -46,12 +49,21 @@ class CustomProcessFunction(KeyedProcessFunction):
         result.pop("doubles", None)
         # output the result
         result = json.dumps(result)
-        out.collect(result)
+        # out.collect(result)
 
         # remove the events outside of the window from the queue
         self.event_queue.clear()
         for event in events_in_window:
             self.event_queue.add(event)
+        yield result
+
+    def extract_timestamp(self, value):
+        data = json.loads(value)
+        timestamp_str = data['timestamp']
+        dt = datetime.strptime(timestamp_str, '%Y-%m-%dT%H:%M:%SZ')
+        unix_timestamp = int(dt.timestamp() * 1000)
+        return unix_timestamp
+
 
 class MyTimestampAssigner(TimestampAssigner):
     def extract_timestamp(self, value, record_timestamp) -> int:
@@ -114,7 +126,7 @@ producer = FlinkKafkaProducer(SINK_KAFKA_TOPIC, SimpleStringSchema(), producer_p
 # Apply transformation
 input_stream.assign_timestamps_and_watermarks(watermark_strategy) \
     .key_by(lambda x: x[0], key_type=Types.STRING()) \
-    .process(CustomProcessFunction()) \
+    .process(CustomProcessFunction(), Types.STRING()) \
     .add_sink(producer)
 
 # Submit the job

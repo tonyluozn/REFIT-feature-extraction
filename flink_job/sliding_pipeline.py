@@ -29,8 +29,8 @@ class CustomProcessFunction(KeyedProcessFunction):
         # add the current event to the queue
         self.event_queue.add(value)
 
-        # create a window of events in the past 10 minutes
-        window_start = ctx.timestamp() - 10 * 60 * 1000  # 10 minutes in ms
+        # create a window of events in the past 30 s
+        window_start = ctx.timestamp() - 0.5 * 60 * 1000
         events_in_window = [event for event in self.event_queue.get() if self.extract_timestamp(event) >= window_start]
 
         # process the window
@@ -38,8 +38,8 @@ class CustomProcessFunction(KeyedProcessFunction):
         temperatures = [data["doubles"]["temperature"] for data in input_data_list]
         humidities = [data["doubles"]["humidity"] for data in input_data_list]
 
-        average_temperature = sum(temperatures) / len(temperatures) if temperatures else 0
-        average_humidity = sum(humidities) / len(humidities) if humidities else 0
+        average_temperature = round(sum(temperatures) / len(temperatures),2) if temperatures else 0
+        average_humidity = round(sum(humidities) / len(humidities),2) if humidities else 0
 
         result = input_data_list[-1] if input_data_list else {}
         result["features"] = {

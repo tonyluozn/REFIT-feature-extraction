@@ -29,8 +29,8 @@ def send_data(key):
         "project_guid": "iot-streaming",
         "id": str(key),
         "timestamp": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-        "doubles": {"temperature": round(random.uniform(20, 30), 1),
-                    "humidity": round(random.uniform(30, 60), 1)},
+        "doubles": {"temperature": random.choice([10,20]),
+                    "humidity": random.choice([10,20])},
     }
     producer.send(KAFKA_TOPIC, sensor_data)
     producer.flush() # flush data to Kafka
@@ -41,6 +41,5 @@ id = 0
 while True:
     send_data(id)
     id+=1
-    time.sleep(5)  # wait for 5 seconds before sending the next data point
-
+    time.sleep(random.choice([5, 10, 20]))
 
